@@ -210,14 +210,15 @@ static void stepper_motor_move_towards(uint32_t required) {
 
 /******* support position recalculation *********/
 static volatile uint8_t step_multiplier = 1u;
-static volatile uint8_t step_divisor = 3u;
+static volatile uint8_t step_divisor = 1u;
 static volatile uint32_t required_support_position = 0;
 
 static void init_support_position_recalculation() {
 	OCR1AH = 0x00; 
 	OCR1AL = SUPPORT_RECALCULATION_SPEED;
 	TCCR1A = 0x00; // Clear Timer on Compare Match (CTC) Mode
-	TCCR1B = (1 << CS10) | (1 << CS11) | (1 << WGM12); // CLK / 64x
+	//TCCR1B = (1 << CS10) | (1 << CS11) | (1 << WGM12); // CLK / 64x
+	TCCR1B = (1 << CS10) | (1 << WGM12); // CLK / 64x
 	TIMSK1 = 1 << OCIE1A; // enable interrupt
 }
 
@@ -260,6 +261,25 @@ static void init_revolution_calculation(void) {
 	TIMSK2 = 1 << OCIE2A; // enable interrupt
 }
 
+/* call this method once per second */
+static void recalculate_revolutions_per_second() {
+	uint16_t tmp = current_spindle_angle_overflow;
+	int16_t angle_increment_per_second = tmp - previous_spindle_revolutions;
+	previous_spindle_revolutions = tmp;
+	
+	int32_t angle_increment_per_minute = 60l * angle_increment_per_second;
+	spindle_revolutions_per_minute = angle_increment_per_minute / STEPS_FOR_ONE_TURN;
+}
+
+ISR(TIMER2_COMPA_vect) { // once per 1ms
+	if (one_ms_to_one_second++ == 1000u) {
+		one_ms_to_one_second = 0; // once per second
+		recalculate_revolutions_per_second();
+
+		led_toggle();
+	}
+}
+
 /* Display information */
 static void display_user_setting_values() {
 	lcd_set_cursor(0, 0);
@@ -292,26 +312,6 @@ static void display_init_information() {
 	lcd_disable_cursor();
 	lcd_disable_blinking();
 	display_redraw();
-}
-
-
-/* call this method once per second */
-static void recalculate_revolutions_per_second() {
-	uint16_t tmp = current_spindle_angle_overflow;
-	int16_t angle_increment_per_second = tmp - previous_spindle_revolutions;
-	previous_spindle_revolutions = tmp;
-	
-	int32_t angle_increment_per_minute = 60l * angle_increment_per_second;
-	spindle_revolutions_per_minute = angle_increment_per_minute / STEPS_FOR_ONE_TURN;
-}
-
-ISR(TIMER2_COMPA_vect) { // once per 1ms
-	if (one_ms_to_one_second++ == 1000u) {
-		one_ms_to_one_second = 0; // once per second
-		recalculate_revolutions_per_second();
-
-		led_toggle();
-	}
 }
 
 /************* user setup values / menu **************/
@@ -430,8 +430,8 @@ int main(void) {
 	lcd_init();
 	stepper_motor_init();
 	
-	user_setup_values();
-	display_init_information();
+	//user_setup_values();
+	//display_init_information();
 	
 	init_step_counting();
 	init_support_position_recalculation();
@@ -439,6 +439,7 @@ int main(void) {
 	sei(); // enable interrupts
 
 
+PORTC &= ~(1 << PORTC2); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     while (1) {
 		spindle_try_to_set_position_limit();
