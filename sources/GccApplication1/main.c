@@ -40,6 +40,8 @@ typedef enum {
 
 static volatile mode_t mode = LEFT;
 
+static void recalculate_support_position();
+
 /******* On board led ******/
 static void led_init() {
 	DDRB |= 1 << DDB5;
@@ -149,6 +151,8 @@ static void spindle_position_recalculation() {
 			}
 		}
 	}
+	
+	recalculate_support_position();
 }
 	
 //Rotary Encoder interrupt
@@ -217,8 +221,8 @@ static void init_support_position_recalculation() {
 	OCR1AH = 0x00; 
 	OCR1AL = SUPPORT_RECALCULATION_SPEED;
 	TCCR1A = 0x00; // Clear Timer on Compare Match (CTC) Mode
-	//TCCR1B = (1 << CS10) | (1 << CS11) | (1 << WGM12); // CLK / 64x
-	TCCR1B = (1 << CS10) | (1 << WGM12); // CLK / 64x
+	TCCR1B = (1 << CS10) | (1 << CS11) | (1 << WGM12); // CLK / 64x
+	//TCCR1B = (1 << CS10) | (1 << WGM12); // CLK / 1x
 	TIMSK1 = 1 << OCIE1A; // enable interrupt
 }
 
@@ -434,12 +438,12 @@ int main(void) {
 	//display_init_information();
 	
 	init_step_counting();
-	init_support_position_recalculation();
+	//init_support_position_recalculation();
 	init_revolution_calculation();
 	sei(); // enable interrupts
 
 
-PORTC &= ~(1 << PORTC2); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//PORTC &= ~(1 << PORTC2); //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     while (1) {
 		spindle_try_to_set_position_limit();
