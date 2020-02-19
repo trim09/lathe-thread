@@ -13,8 +13,8 @@
  * PortC.2 = Driver Enable
  * PortC.1 = Driver Pulse
  * PortC.0 = Driver Direction
- * PortD.2 = zeleny kabel od snimace otacek
- * PortD.3 = zluty kabel od snimace otacek
+ * PortD.2 = zluty kabel od snimace otacek
+ * PortD.3 = zeleny kabel od snimace otacek
  */ 
 
 #include "cpu.h"
@@ -29,10 +29,16 @@
 
 #define LCD_DISPLAY_ADDRESS 0x27
 
-//#define SUPPORT_RECALCULATION_SPEED 0x80 // 16 MHz / 64 / 128 / 2 ~ 1 kHz   deleno 2 protoze v jednom kroku nastavime puls na Driveru na 1 a pak v druhem na 0
-#define SUPPORT_RECALCULATION_SPEED 200
+#define SUPPORT_RECALCULATION_SPEED 128 // 16 MHz / 64 / 128 / 2 ~ 1 kHz   deleno 2 protoze v jednom kroku nastavime puls na Driveru na 1 a pak v druhem na 0
 
 #define STEPS_FOR_ONE_TURN 600u
+
+typedef enum {
+	LEFT,
+	RIGHT
+} mode_t;
+
+static volatile mode_t mode = LEFT;
 
 /******* On board led ******/
 static void led_init() {
@@ -51,19 +57,78 @@ static void led_toggle() {
 	PORTB ^= 1 << PORTB5;
 }
 
+/******* buttons *********/
+static void init_buttons() {
+	DDRD &= ~(1 << DDD4);
+	DDRD &= ~(1 << DDD6);
+	DDRD &= ~(1 << DDD7);
+	DDRB &= ~(1 << DDB0);
+	DDRB &= ~(1 << DDB1);
+}
+
+static uint8_t button_1_is_pressed() {
+	return !(PIND & (1 << PIND4));
+}
+
+static uint8_t button_2_is_pressed() {
+	return !(PIND & (1 << PIND6));
+}
+
+static uint8_t button_3_is_pressed() {
+	return !(PIND & (1 << PIND7));
+}
+
+static uint8_t button_4_is_pressed() {
+	return !(PINB & (1 << PINB0));
+}
+
+static uint8_t button_5_is_pressed() {
+	return !(PINB & (1 << PINB1));
+}
+
+static uint8_t button_status() {
+	uint8_t ret = 0;
+	if (button_1_is_pressed()) {
+		ret |= 1;
+	}
+	if (button_2_is_pressed()) {
+		ret |= 1 << 1;
+	}
+	if (button_3_is_pressed()) {
+		ret |= 1 << 2;
+	}
+	if (button_4_is_pressed()) {
+		ret |= 1 << 3;
+	}
+	if (button_5_is_pressed()) {
+		ret |= 1 << 4;
+	}
+	return ret;
+}
+
 /******* Angle and position ******/
-/* Phase 1 wire -> INT0 (PORTD PIN2) 
-   Phase 2 wire -> PORTD PIN1 */
-static volatile bool current_direction = true;
 static volatile uint16_t current_spindle_angle; // natoceni vretena
 static volatile uint16_t current_spindle_angle_overflow; // can overflow
 static volatile uint16_t current_spindle_absolute_position;
 static volatile uint16_t end_position = UINT16_MAX;
 
-//Rotary Encoder interrupt
-ISR(INT0_vect) { //Interrupt Vectors in ATmega328P - page 48
-	if (PIND & (1 << PD3)) { // rotating left or right?
-		current_direction = true;
+static void spindle_try_to_set_position_limit() {
+	if (button_1_is_pressed() && (end_position == UINT16_MAX)) {
+		end_position = current_spindle_absolute_position;
+	}
+}
+
+static uint8_t spindle_rotate_left() {
+	uint8_t direction = PIND & (1 << PD3);
+	if (mode == LEFT) {
+		return direction;
+	} else {
+		return !direction;
+	}	
+}
+
+static void spindle_position_recalculation() {
+	if (spindle_rotate_left()) { // rotating left or right?
 		current_spindle_angle_overflow++;
 		if (current_spindle_angle < STEPS_FOR_ONE_TURN - 1) {
 			current_spindle_angle++;
@@ -74,7 +139,6 @@ ISR(INT0_vect) { //Interrupt Vectors in ATmega328P - page 48
 			}
 		}
 	} else {
-		current_direction = false;
 		current_spindle_angle_overflow--;
 		if (current_spindle_angle > 0) {
 			current_spindle_angle--;
@@ -86,6 +150,11 @@ ISR(INT0_vect) { //Interrupt Vectors in ATmega328P - page 48
 		}
 	}
 }
+	
+//Rotary Encoder interrupt
+ISR(INT0_vect) { //Interrupt Vectors in ATmega328P - page 48
+	spindle_position_recalculation();
+}
 
 static void init_step_counting() {
 	// Phase wire 1 - External Interrupts External Interrupts - page 58
@@ -96,7 +165,7 @@ static void init_step_counting() {
 	DDRD &= ~(1 << PD3); // PORTD PIN1 as input
 }
 
-/******* stepper-motor ***************/
+/*********** stepper-motor ***************/
 static uint32_t stepper_motor_absolute_position = 0;
 
 static void stepper_motor_init() {
@@ -135,26 +204,21 @@ static void stepper_motor_move_towards(uint32_t required) {
 			stepper_motor_move_step_right();
 			stepper_motor_absolute_position--;
 		}
-		/*
-		else {// TODO for testing
-			stepper_motor_move_step_left();
-			stepper_motor_absolute_position++;
-		}*/
 	}
 }
 
 
-/******* support position *********/
-static volatile uint8_t step_multiplier = 123u;
-static volatile uint8_t step_divisor = 123u;
-static volatile uint32_t requeired_support_position = 0;
+/******* support position recalculation *********/
+static volatile uint8_t step_multiplier = 1u;
+static volatile uint8_t step_divisor = 3u;
+static volatile uint32_t required_support_position = 0;
 
 static void init_support_position_recalculation() {
 	OCR1AH = 0x00; 
 	OCR1AL = SUPPORT_RECALCULATION_SPEED;
 	TCCR1A = 0x00; // Clear Timer on Compare Match (CTC) Mode
 	TCCR1B = (1 << CS10) | (1 << CS11) | (1 << WGM12); // CLK / 64x
-	TIMSK1 = 1 << OCIE1A; // enable interrupt  /* TODO bug? */
+	TIMSK1 = 1 << OCIE1A; // enable interrupt
 }
 
 static void recalculate_support_position() {
@@ -167,23 +231,24 @@ static void recalculate_support_position() {
 		
 	if (tmp_current_position == 0) {
 		tmp_current_angle = 0;
-	} else if (tmp_current_position >= end_position)  {
-		tmp_current_angle = 0;
 	} else {
-		tmp_current_position--; //preskocime pozici 0, protoze tu nepouzivame pro posuv supportu
+		if (tmp_current_position >= end_position)  {
+			tmp_current_angle = 0;
+		}
+		tmp_current_position--; //preskocime pozici 0, protoze tu nepouzivame pro posuv supportu (pocitame od jednicky)
 	}
 		
 	uint32_t requeired_support_position_tmp = ((((uint32_t)tmp_current_position) * STEPS_FOR_ONE_TURN + tmp_current_angle) * step_multiplier) / step_divisor;
-	requeired_support_position = requeired_support_position_tmp;
+	required_support_position = requeired_support_position_tmp;
 	stepper_motor_move_towards(requeired_support_position_tmp);
 }
 
 ISR(TIMER1_COMPA_vect) { // called as fast as stepper motor can handle 
 	recalculate_support_position();
-	//PORTD ^= (1 << PORTD5); //for testing
 }
 
-/********* rotations per second **************/
+
+/********* rotations per second recalculation **************/
 static volatile int16_t spindle_revolutions_per_minute = 0;
 static uint16_t previous_spindle_revolutions = 0;
 static uint16_t one_ms_to_one_second = 0;
@@ -195,131 +260,202 @@ static void init_revolution_calculation(void) {
 	TIMSK2 = 1 << OCIE2A; // enable interrupt
 }
 
+/* Display information */
+static void display_user_setting_values() {
+	lcd_set_cursor(0, 0);
+	lcd_enable_cursor();
+	lcd_enable_blinking();
+	lcd_printf("%-5s %03u/%03u", (mode == LEFT) ? "Levy" : "Pravy", step_multiplier, step_divisor);
+}
+
+static void display_redraw() {
+	char mode_char;
+	if (mode == LEFT) {
+		mode_char = 'L';
+	} else if (mode == RIGHT) {
+		mode_char = 'P';
+	} else {
+		mode_char = '?';
+	}
+	lcd_set_cursor(0, 0);
+	lcd_printf("vreteno: %4u  %5u", current_spindle_angle, current_spindle_absolute_position);
+	lcd_set_cursor(0, 1);
+	lcd_printf("%3u/%-3u%c%5i ot/min", step_multiplier, step_divisor, mode_char, spindle_revolutions_per_minute);
+	lcd_set_cursor(0, 2);
+	lcd_printf("support: %11lu", stepper_motor_absolute_position);
+	lcd_set_cursor(0, 3);
+	lcd_printf("%2u %5i %11lu", button_status(), (int16_t) (required_support_position - stepper_motor_absolute_position), required_support_position);
+}
+
+static void display_init_information() {
+	lcd_clear();
+	lcd_disable_cursor();
+	lcd_disable_blinking();
+	display_redraw();
+}
+
+
+/* call this method once per second */
+static void recalculate_revolutions_per_second() {
+	uint16_t tmp = current_spindle_angle_overflow;
+	int16_t angle_increment_per_second = tmp - previous_spindle_revolutions;
+	previous_spindle_revolutions = tmp;
+	
+	int32_t angle_increment_per_minute = 60l * angle_increment_per_second;
+	spindle_revolutions_per_minute = angle_increment_per_minute / STEPS_FOR_ONE_TURN;
+}
+
 ISR(TIMER2_COMPA_vect) { // once per 1ms
 	if (one_ms_to_one_second++ == 1000u) {
 		one_ms_to_one_second = 0; // once per second
-		
-		uint16_t tmp = current_spindle_angle_overflow;
-		
-		uint16_t angle_increment_per_second = tmp - previous_spindle_revolutions;
-		uint32_t angle_increment_per_minute = 60lu * angle_increment_per_second;
-		int16_t spindle_revolutions_per_minute_abs = angle_increment_per_minute / STEPS_FOR_ONE_TURN;
-		if (current_direction) {
-			spindle_revolutions_per_minute = spindle_revolutions_per_minute_abs;
-		} else {
-			spindle_revolutions_per_minute = -spindle_revolutions_per_minute_abs;	
-		}
-		
-		previous_spindle_revolutions = tmp;
-				
+		recalculate_revolutions_per_second();
+
 		led_toggle();
 	}
 }
 
-static void enable_motor_driver() {
-	/* TODO */
+/************* user setup values / menu **************/
+static uint8_t user_add_witout_overflow(uint8_t orig, int8_t increment) {
+	int16_t res = orig;
+	res += increment;
+	if (res > UINT8_MAX) {
+		return UINT8_MAX;
+	} else if (res < 0) {
+		return 0;
+	} else {
+		return res;
+	}
 }
 
+static uint8_t user_setup_next_position(uint8_t prev) {
+	switch (prev) {
+		case 0: return 6;
+		case 6: return 7;
+		case 7: return 8;
+		case 8: return 10;
+		case 10: return 11;
+		case 11: return 12;
+		case 12: return UINT8_MAX;
+		default: return UINT8_MAX;
+	}
+}
 
-#define COUNTER_TOP_VALUE 10
-#define COUNTER_MATCH_VALUE 127
-//#define COUNTER_SET_VALUE (COUNTER_MATCH_VALUE - 1)
-#define COUNTER_SET_VALUE 126
+static void user_setup_values() {
+	uint8_t position = 0;
+	while(position != UINT8_MAX) {
+		display_user_setting_values();
+		lcd_set_cursor(position, 0);	
+		
+		if (button_1_is_pressed()) {
+			position = user_setup_next_position(position);
+		} else {
+			switch(position) {
+				case 0:
+					if (button_2_is_pressed()) {
+						if (mode == LEFT) {
+							mode = RIGHT;
+						} else if (mode == RIGHT) {
+							mode = LEFT;
+						}
+					}
+					break;
+				case 6:	
+					if (button_2_is_pressed()) {
+						step_multiplier = user_add_witout_overflow(step_multiplier, 100);
+					} else if (button_3_is_pressed()) {
+						step_multiplier = user_add_witout_overflow(step_multiplier, -100);
+					}
+					break;
+				case 7:
+					if (button_2_is_pressed()) {
+						step_multiplier = user_add_witout_overflow(step_multiplier, 10);
+					} else if (button_3_is_pressed()) {
+						step_multiplier = user_add_witout_overflow(step_multiplier, -10);
+					}
+					break;
+				case 8:
+					if (button_2_is_pressed()) {
+						step_multiplier = user_add_witout_overflow(step_multiplier, 1);
+					} else if (button_3_is_pressed()) {
+						step_multiplier = user_add_witout_overflow(step_multiplier, -1);
+					}
+						break;
+				case 10:
+					if (button_2_is_pressed()) {
+						step_divisor = user_add_witout_overflow(step_divisor, 100);
+					} else if (button_3_is_pressed()) {
+						step_divisor = user_add_witout_overflow(step_divisor, -100);
+					}
+					break;
+				case 11:
+					if (button_2_is_pressed()) {
+						step_divisor = user_add_witout_overflow(step_divisor, 10);
+					} else if (button_3_is_pressed()) {
+						step_divisor = user_add_witout_overflow(step_divisor, -10);
+					}
+					break;
+				case 12:
+					if (button_2_is_pressed()) {
+						step_divisor = user_add_witout_overflow(step_divisor, 1);
+					} else if (button_3_is_pressed()) {
+						step_divisor = user_add_witout_overflow(step_divisor, -1);
+					}
+					break;
+				default:
+					break;
+			}	
+		}
+		
+		if (step_divisor == 0) {
+			step_divisor = 1;	
+		}
+		
+		while(button_status())
+			;
+		_delay_ms(100);
+	}
+}
+
+/************** main **************/
 
 int main(void) {
 	PORTB = 0xFF; /* enable pull up on PORTB */
 	PORTC = 0xFF; /* enable pull up on PORTC */
 	PORTD = 0xFF; /* enable pull up on PORTD */
 		
+	init_buttons();
 	led_init();
+	i2c_init();
+	i2c_start_wait(LCD_DISPLAY_ADDRESS << 1 | I2C_WRITE);
+	lcd_init();
 	stepper_motor_init();
+	
+	user_setup_values();
+	display_init_information();
+	
 	init_step_counting();
 	init_support_position_recalculation();
 	init_revolution_calculation();
-	i2c_init();
-	i2c_start_wait(LCD_DISPLAY_ADDRESS << 1 | I2C_WRITE);	
-	lcd_init();
 	sei(); // enable interrupts
-	
-	//while(1) {
-		//recalculate_support_position();
-	//}
-	
-	//PORTC |= 1 << PORTC2;
-	//PORTC |= 1 << PORTC0;
-	
-	/*
-	OCR0A = COUNTER_TOP_VALUE;
-	OCR0B = COUNTER_MATCH_VALUE; // MATCH
-	TCCR0A = (1 << COM0B0) | (1 << COM0B1) | (1 << WGM01) | (1 << WGM00); // fast-PWM, COM0B=1 on timer match, COM0B=0 on timer clear, COM0B to ouutput
-	TCCR0B = (1 << CS01) | (1 << CS00) | (1 << WGM02); // 64x prescaller, fast-PWM,
-	DDRD |= 1 << DDD5;
-	//TIFR0
-	
-	while(1) {
-		
-		if (TCNT0 == 1) {
-			//_delay_us(1);
-			TCNT0 = 56;
-		}
-	}
-	
-	
-		while(1) {
-			_delay_us(500);
-			PORTC |= 1 << PORTC1;
-			_delay_us(500);
-			PORTC &= ~(1 << PORTC1);
-			
-		}
-	*/
-
-		/*
-	while(1) {	
-				DDRB |= 1 << DDB5;
-				while (1) {
-					PORTB |= 1 << PORTB5;
-					for(uint32_t i = 0; i < 160000 ; i++)
-					;
-					PORTB &= ~(1 << PORTB5);
-					for(uint32_t i = 0; i < 1600000 ; i++)
-					;
-				}
-	}
-	*/
-	
 
 
-//i2c_write(1<<LCD_RS);
 
-
-	
-	
-	
-	
-	DDRB |= 1 << DDB5;
     while (1) {
-
-						lcd_set_cursor(0, 0);
-						lcd_printf("vreteno:  %-5u %3u", current_spindle_angle, current_spindle_absolute_position);
-						lcd_set_cursor(0, 1);
-						lcd_printf("            %i ot/min", spindle_revolutions_per_minute);
-						lcd_set_cursor(0, 2);
-						lcd_printf("support: %-lu", stepper_motor_absolute_position);
-						lcd_set_cursor(0, 3);
-						lcd_printf("%8i %-lu", (int16_t) (requeired_support_position - stepper_motor_absolute_position), requeired_support_position);
-
+		spindle_try_to_set_position_limit();
+		display_redraw();
     }
 	
-		DDRB |= 1 << DDB5;
-		while (1) {
-			PORTB |= 1 << PORTB5;
-			for(uint32_t i = 0; i < 160000 ; i++)
-			;
-			PORTB &= ~(1 << PORTB5);
-			for(uint32_t i = 0; i < 1600000 ; i++)
-			;
-		}
+	/*
+	DDRB |= 1 << DDB5;
+	while (1) {
+		PORTB |= 1 << PORTB5;
+		for(uint32_t i = 0; i < 160000 ; i++)
+		;
+		PORTB &= ~(1 << PORTB5);
+		for(uint32_t i = 0; i < 1600000 ; i++)
+		;
+	}
+	*/
 		
 }
 

@@ -1,0 +1,9 @@
+23KMK112P3V
+
+Minebea 23KM-K112-P3V 23KMK112P3V Stepper Motor
+
+1kg force = ~9.81 Newtons, so 8kgf-cm = 78.5Ncm.
+
+
+https://www.pololu.com/product/1478
+

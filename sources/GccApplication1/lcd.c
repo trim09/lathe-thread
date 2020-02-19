@@ -142,7 +142,7 @@ void lcd_printf(char *format, ...) {
 void lcd_init(void) {
 
   // Wait for LCD to become ready (docs say 15ms+)
-  _delay_ms(100);
+  _delay_ms(15);
 
   //i2c_write(0x00); //TODO
 						
