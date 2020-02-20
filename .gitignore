@@ -1,3 +1,8 @@
 /.metadata/
 *.o
 *.d
+*.eep
+*.elf
+*.lss
+*.map
+*.srec
