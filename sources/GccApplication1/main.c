@@ -24,18 +24,13 @@
 #include <stdbool.h>
 #include <util/atomic.h>
 #include <util/delay.h>
+#include "main.h"
 #include "i2cmaster.h"
 #include "lcd.h"
 #include "buttons.h"
 #include "led.h"
 #include "setup_menu.h"
-
-#define LCD_DISPLAY_ADDRESS 0x27
-
-#define SUPPORT_RECALCULATION_SPEED 128 // 16 MHz / 64 / 128 / 2 ~ 1 kHz   deleno 2 protoze v jednom kroku nastavime puls na Driveru na 1 a pak v druhem na 0
-
-#define STEPS_FOR_ONE_TURN 600u
-
+#include "revolutions.h"
 
 
 static /*volatile*/ mode_t mode = LEFT;
@@ -47,6 +42,10 @@ static /*volatile*/ uint16_t current_spindle_angle; // natoceni vretena
 static /*volatile*/ uint16_t current_spindle_angle_overflow; // can overflow
 static /*volatile*/ uint16_t current_spindle_absolute_position;
 static /*volatile*/ uint16_t end_position = UINT16_MAX;
+
+uint16_t get_current_spindle_angle_overflow() {
+	return current_spindle_angle_overflow;
+}
 
 static void spindle_try_to_set_position_limit() {
 	if (button_1_is_pressed() && (end_position == UINT16_MAX)) {
@@ -197,37 +196,6 @@ ISR(TIMER2_COMPA_vect) {
 }
 
 
-/********* revolutions per second calculation **************/
-static /*volatile*/ int16_t spindle_revolutions_per_minute = 0;
-static uint16_t previous_spindle_revolutions = 0;
-static uint16_t one_ms_to_one_second = 0;
-
-static void init_revolution_calculation(void) {
-	OCR0A = 125u; // 16 MHz / 256 / 125 = 2 ms
-	TCCR0A = 1 << WGM01; // Clear Timer on Compare Match (CTC) Mode
-	TCCR0B = 1 << CS02; // CLK / 256x
-	TIMSK0 = 1 << OCIE0A; // enable interrupt
-}
-
-/* call this method once per second */
-static void recalculate_revolutions_per_second() {
-	uint16_t tmp = current_spindle_angle_overflow;
-	int16_t angle_increment_per_second = tmp - previous_spindle_revolutions;
-	previous_spindle_revolutions = tmp;
-	
-	int32_t angle_increment_per_minute = 60l * angle_increment_per_second;
-	spindle_revolutions_per_minute = angle_increment_per_minute / STEPS_FOR_ONE_TURN;
-}
-
-ISR(TIMER0_COMPA_vect) { // once per 2ms
-	if (one_ms_to_one_second++ == 500u) {
-		one_ms_to_one_second = 0; // once per second
-		recalculate_revolutions_per_second();
-
-		led_toggle();
-	}
-}
-
 /****** Display information *********/
 static void display_redraw() {
 	char mode_char;
@@ -241,7 +209,7 @@ static void display_redraw() {
 	lcd_set_cursor(0, 0);
 	lcd_printf("vreteno: %4u  %5u", current_spindle_angle, current_spindle_absolute_position);
 	lcd_set_cursor(0, 1);
-	lcd_printf("%3u/%-3u%c%5i ot/min", get_configured_multiplier(), get_configured_divisor(), mode_char, spindle_revolutions_per_minute);
+	lcd_printf("%3u/%-3u%c%5i ot/min", get_configured_multiplier(), get_configured_divisor(), mode_char, get_revolutions_per_minute());
 	lcd_set_cursor(0, 2);
 	lcd_printf("support: %11lu", stepper_motor_absolute_position);
 	lcd_set_cursor(0, 3);
