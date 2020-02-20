@@ -129,6 +129,10 @@ static uint8_t spindle_rotate_left() {
 	}	
 }
 
+static void schedule_support_position_recalculation() {
+	TIMSK2 |= 1 << OCIE2A;
+}
+
 static void spindle_position_recalculation() {
 	if (spindle_rotate_left()) { // rotating left or right?
 		current_spindle_angle_overflow++;
@@ -153,6 +157,7 @@ static void spindle_position_recalculation() {
 	}
 	
 	recalculate_support_position(current_spindle_absolute_position, current_spindle_angle);
+	schedule_support_position_recalculation();
 }
 	
 //Rotary Encoder interrupt
@@ -174,7 +179,7 @@ static uint32_t stepper_motor_absolute_position = 0;
 
 static void stepper_do_pulse() {
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-		TCNT2 = 180;
+		TCNT2 = 3;
 		TIFR2 = 0xFF; // clear all flags
 	}
 }
@@ -201,6 +206,7 @@ static void stepper_motor_move_towards(uint32_t required) {
 		stepper_motor_move_step_right();
 		stepper_motor_absolute_position--;
 	}
+
 	
 	if (required != stepper_motor_absolute_position) {
 		TIMSK2 |= 1 << OCIE2A;
@@ -215,6 +221,7 @@ static void stepper_motor_init() {
 	
 	/* we are using this timer as a one shot timer https://hackaday.com/2015/03/24/avr-hardware-timer-tricked-into-one-shot/ */
 	TCCR2A = (1 << COM2B1) | (1 << COM2B0) | (1 << WGM21) | (1 << WGM20);
+	//TCCR2B = (1 << WGM22) | (1 << CS21) | (1 << CS20); // CLK / 64
 	TCCR2B = (1 << WGM22) | (1 << CS21); // CLK / 8
 	OCR2A = 0;
 	OCR2B = 200;
@@ -225,6 +232,7 @@ static void stepper_motor_init() {
 /******* support position recalculation *********/
 static /*volatile*/ uint8_t step_multiplier = 1u;
 static /*volatile*/ uint8_t step_divisor = 1u;
+static /*volatile*/ float step_multiplier_float = 1;
 static /*volatile*/ uint32_t required_support_position = 0;
 
 static void recalculate_support_position(uint16_t current_position, uint16_t current_angle) {
@@ -236,15 +244,16 @@ static void recalculate_support_position(uint16_t current_position, uint16_t cur
 		}
 		current_position--; //preskocime pozici 0, protoze tu nepouzivame pro posuv supportu (pocitame od jednicky)
 	}
-		
-	uint32_t requeired_support_position_tmp = ((((uint32_t)current_position) * STEPS_FOR_ONE_TURN + current_angle) * step_multiplier) / step_divisor;
+	
+	//uint32_t requeired_support_position_tmp = ((((uint32_t)current_position) * STEPS_FOR_ONE_TURN + current_angle) * step_multiplier) / step_divisor;
+	uint32_t requeired_support_position_tmp = ((uint32_t)current_position * STEPS_FOR_ONE_TURN + current_angle) * step_multiplier_float;
+	
 	required_support_position = requeired_support_position_tmp;
-	stepper_motor_move_towards(requeired_support_position_tmp);
+	//stepper_motor_move_towards(requeired_support_position_tmp);
 }
 
 ISR(TIMER2_COMPA_vect) {
 	TIMSK2 &= ~(1 << OCIE2A); // disable interrupts
-	TIFR2 = 0x07; // clear all flags
 	
 	uint32_t requeired_support_position_tmp;
 	
@@ -293,6 +302,8 @@ static void display_user_setting_values() {
 	lcd_enable_cursor();
 	lcd_enable_blinking();
 	lcd_printf("%-5s %03u/%03u", (mode == LEFT) ? "Levy" : "Pravy", step_multiplier, step_divisor);
+	lcd_set_cursor(0, 1);
+	lcd_printf("%f", step_multiplier_float);
 }
 
 static void display_redraw() {
@@ -417,6 +428,8 @@ static void user_setup_values() {
 			step_divisor = 1;	
 		}
 		
+		step_multiplier_float = (float)step_multiplier / step_divisor;
+		
 		while(button_status())
 			;
 		_delay_ms(100);
@@ -429,14 +442,15 @@ int main(void) {
 	PORTB = 0xFF; /* enable pull up on PORTB */
 	PORTC = 0xFF; /* enable pull up on PORTC */
 	PORTD = 0xFF; /* enable pull up on PORTD */
+		
+		
 		/*
 		stepper_motor_init();
 		while (1) {
 
 			stepper_motor_move_step_left();
-			while (TIFR2 != 0x07)
-				;
-			//_delay_us(500);
+		
+			_delay_us(700);
 		}
 		*/
 		
