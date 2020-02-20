@@ -187,10 +187,25 @@
     <Compile Include="main.c">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="main.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="revolutions.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="revolutions.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="setup_menu.c">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="setup_menu.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="support.c">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="support.h">
       <SubType>compile</SubType>
     </Compile>
   </ItemGroup>

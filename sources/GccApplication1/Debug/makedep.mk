@@ -12,5 +12,9 @@ led.c
 
 main.c
 
+revolutions.c
+
 setup_menu.c
+
+support.c
 

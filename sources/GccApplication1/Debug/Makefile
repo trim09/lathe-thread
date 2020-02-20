@@ -43,7 +43,8 @@ C_SRCS +=  \
 ../led.c \
 ../main.c \
 ../revolutions.c \
-../setup_menu.c
+../setup_menu.c \
+../support.c
 
 
 PREPROCESSING_SRCS += 
@@ -59,7 +60,8 @@ lcd.o \
 led.o \
 main.o \
 revolutions.o \
-setup_menu.o
+setup_menu.o \
+support.o
 
 OBJS_AS_ARGS +=  \
 buttons.o \
@@ -68,7 +70,8 @@ lcd.o \
 led.o \
 main.o \
 revolutions.o \
-setup_menu.o
+setup_menu.o \
+support.o
 
 C_DEPS +=  \
 buttons.d \
@@ -77,7 +80,8 @@ lcd.d \
 led.d \
 main.d \
 revolutions.d \
-setup_menu.d
+setup_menu.d \
+support.d
 
 C_DEPS_AS_ARGS +=  \
 buttons.d \
@@ -86,7 +90,8 @@ lcd.d \
 led.d \
 main.d \
 revolutions.d \
-setup_menu.d
+setup_menu.d \
+support.d
 
 OUTPUT_FILE_PATH +=GccApplication1.elf
 
@@ -145,6 +150,13 @@ LINKER_SCRIPT_DEP+=
 	
 
 ./setup_menu.o: .././setup_menu.c
+	@echo Building file: $<
+	@echo Invoking: AVR/GNU C Compiler : 9.2.0
+	$(QUOTE)C:\_Tomovo\_common\avr-gcc-9.2.0-x64-mingw\bin\avr-gcc.exe$(QUOTE)  -x c -funsigned-char -funsigned-bitfields -DDEBUG  -I"C:\Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.3.300\include"  -O3 -ffunction-sections -fdata-sections -fpack-struct -fshort-enums -mrelax -g3 -Wall -Wextra -pedantic  -mmcu=atmega328p  -c -std=gnu99 -Wno-unused-function -MD -MP -MF "$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -MT"$(@:%.o=%.o)"   -o "$@" "$<" 
+	@echo Finished building: $<
+	
+
+./support.o: .././support.c
 	@echo Building file: $<
 	@echo Invoking: AVR/GNU C Compiler : 9.2.0
 	$(QUOTE)C:\_Tomovo\_common\avr-gcc-9.2.0-x64-mingw\bin\avr-gcc.exe$(QUOTE)  -x c -funsigned-char -funsigned-bitfields -DDEBUG  -I"C:\Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.3.300\include"  -O3 -ffunction-sections -fdata-sections -fpack-struct -fshort-enums -mrelax -g3 -Wall -Wextra -pedantic  -mmcu=atmega328p  -c -std=gnu99 -Wno-unused-function -MD -MP -MF "$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -MT"$(@:%.o=%.o)"   -o "$@" "$<" 

@@ -22,7 +22,7 @@ void init_revolution_calculation(void) {
 
 /* call this method once per second */
 static void recalculate_revolutions_per_second() {
-	uint16_t tmp = get_current_spindle_angle_overflow();
+	uint16_t tmp = get_spindle_revolution_steps_overflow();
 	int16_t angle_increment_per_second = tmp - previous_spindle_revolutions;
 	previous_spindle_revolutions = tmp;
 	
