@@ -35,8 +35,6 @@
 
 static /*volatile*/ mode_t mode = LEFT;
 
-
-
 /******* Angle and position ******/
 #define END_POSITION_INIT_VALUE (UINT32_MAX - STEPS_FOR_ONE_TURN) 
 static /*volatile*/ uint32_t end_position = END_POSITION_INIT_VALUE;
@@ -84,17 +82,23 @@ static void spindle_position_recalculation() {
 			current_spindle_revolution_steps -= STEPS_FOR_ONE_TURN - 1;
 		} else {
 			current_spindle_revolution_steps++;	
+			if (current_spindle_revolution_steps > STEPS_FOR_ONE_TURN && current_spindle_revolution_steps <= end_position) {
+				support_spindle_incremented_event();
+			}
 		}
 	} else {
 		spindle_revolution_steps_overflow--;
 		if (current_spindle_revolution_steps == 0)  {
-			current_spindle_revolution_steps += STEPS_FOR_ONE_TURN - 1;
+			current_spindle_revolution_steps = STEPS_FOR_ONE_TURN - 1;
 		} else {
 			current_spindle_revolution_steps--;
+			if (current_spindle_revolution_steps >= STEPS_FOR_ONE_TURN && current_spindle_revolution_steps < end_position) {
+				support_spindle_decremented_event();
+			}
 		}
 	}
 	
-	recalculate_support_position(current_spindle_revolution_steps);
+	//recalculate_support_position(current_spindle_revolution_steps);
 	schedule_support_position_recalculation();
 }
 	
@@ -125,7 +129,7 @@ static void display_redraw() {
 	lcd_set_cursor(0, 0);
 	lcd_printf("vreteno: %4u  %5u", (uint16_t)(current_spindle_revolution_steps % STEPS_FOR_ONE_TURN), (uint16_t)(current_spindle_revolution_steps / STEPS_FOR_ONE_TURN));
 	lcd_set_cursor(0, 1);
-	lcd_printf("%3u/%-3u%c%5i ot/min", get_configured_multiplier(), get_configured_divisor(), mode_char, get_revolutions_per_minute());
+	lcd_printf("%3u/%-3u%c%5i ot/min", get_configured_numerator(), get_configured_denominator(), mode_char, get_revolutions_per_minute());
 	lcd_set_cursor(0, 2);
 	lcd_printf("support: %11lu", get_actual_support_position());
 	lcd_set_cursor(0, 3);
@@ -153,8 +157,9 @@ int main(void) {
 	lcd_init();
 	support_init();
 	
-	user_setup_values();
-	support_set_fraction(get_configured_fraction());
+	//user_setup_values();
+	support_set_fraction(get_configured_numerator(), get_configured_denominator());
+	//support_set_fraction(30, 20);
 	mode = get_configured_mode();
 	
 	display_init_information();

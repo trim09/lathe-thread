@@ -10,6 +10,7 @@
 #define STEPS_FOR_ONE_TURN 600u
 
 uint16_t get_spindle_revolution_steps_overflow();
+
 uint32_t get_end_position();
 
 #endif /* MAIN_H_ */

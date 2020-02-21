@@ -3,15 +3,27 @@
 #include <avr/io.h>
 #include <util/atomic.h>
 #include "main.h"
+#include "rdivfun.h"
+#include <stdlib.h>
 
 /******* support position recalculation *********/
-static volatile float step_multiplier_float = 1.;
+//static volatile float step_multiplier_float = 1.;
+static volatile uint8_t step_numerator = 1;
+static volatile uint8_t step_denominator = 1;
+
 static volatile uint32_t required_support_position = 0;
 static uint32_t actual_support_position = 0;
 
-void support_set_fraction(float fraction) {
-	step_multiplier_float = fraction;
+static int16_t spindle_to_support_recalculation = 0;
+
+void support_set_fraction(uint8_t numerator, uint8_t denominator) {
+	step_numerator = numerator;
+	step_denominator = denominator;
 }
+
+//void support_set_fraction(float fraction) {
+//	step_multiplier_float = fraction;
+//}
 
 uint32_t get_actual_support_position() {
 	return actual_support_position;
@@ -21,24 +33,32 @@ uint32_t get_required_support_position() {
 	return required_support_position;
 }
 
-void recalculate_support_position(uint32_t current_spindle_revolution_steps) {
-	if (current_spindle_revolution_steps < STEPS_FOR_ONE_TURN) {
-		current_spindle_revolution_steps = 0;
-	} else {
-		uint32_t end_position = get_end_position();
-		if (current_spindle_revolution_steps > end_position) {
-			current_spindle_revolution_steps = end_position;
-		}
-		current_spindle_revolution_steps -= STEPS_FOR_ONE_TURN; // skip the first turn
-	}
+void support_spindle_incremented_event() {
+	spindle_to_support_recalculation += step_numerator;
+	
+	//uint16_t div_result = 0;
+	//rdiv16u(&div_result, &spindle_to_support_recalculation, spindle_to_support_recalculation, step_denominator);
+	div_t result = div(spindle_to_support_recalculation, step_denominator);
+	
+	spindle_to_support_recalculation = result.rem;
+	required_support_position += result.quot;
+}
 
-	required_support_position = current_spindle_revolution_steps * step_multiplier_float;
+void support_spindle_decremented_event() {/*
+	spindle_to_support_recalculation -= step_numerator;
+	
+	int16_t result = 0;
+	int16_t remainder = 0;
+	rdiv16u(&result, &remainder, spindle_to_support_recalculation, step_denominator);
+	spindle_to_support_recalculation = remainder;
+	
+	required_support_position += result;*/
 }
 
 /*********** stepper-motor ***************/
 static void stepper_do_pulse() {
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-		TCNT2 = 3;
+		TCNT2 = 199;
 		TIFR2 = 0xFF; // clear all flags
 	}
 }

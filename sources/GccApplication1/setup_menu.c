@@ -5,33 +5,33 @@
 #include "buttons.h"
 #include "lcd.h"
 
-static uint8_t step_multiplier = 1u;
-static uint8_t step_divisor = 1u;
+static uint8_t step_numerator = 1u;
+static uint8_t step_denominator = 1u;
 static mode_t mode = LEFT;
 
 float get_configured_fraction() {
-	return (float)step_multiplier / step_divisor;
+	return (float)step_numerator / step_denominator;
 }
 
 mode_t get_configured_mode() {
 	return mode;
 }
 
-uint8_t get_configured_multiplier() {
-	return step_multiplier;
+uint8_t get_configured_numerator() {
+	return step_numerator;
 }
 
-uint8_t get_configured_divisor() {
-	return step_divisor;
+uint8_t get_configured_denominator() {
+	return step_denominator;
 }
 
 static void display_user_setting_values() {
 	lcd_set_cursor(0, 0);
 	lcd_enable_cursor();
 	lcd_enable_blinking();
-	lcd_printf("%-5s %03u/%03u", (mode == LEFT) ? "Levy" : "Pravy", step_multiplier, step_divisor);
+	lcd_printf("%-5s %03u/%03u", (mode == LEFT) ? "Levy" : "Pravy", step_numerator, step_denominator);
 	lcd_set_cursor(0, 2);
-	lcd_printf("%03u/%03u = %f", step_multiplier, step_divisor, get_configured_fraction());
+	lcd_printf("%03u/%03u = %f", step_numerator, step_denominator, get_configured_fraction());
 }
 
 /************* user setup values / menu **************/
@@ -81,44 +81,44 @@ void user_setup_values() {
 					break;
 				case 6:	
 					if (button_2_is_pressed()) {
-						step_multiplier = user_add_witout_overflow(step_multiplier, 100);
+						step_numerator = user_add_witout_overflow(step_numerator, 100);
 					} else if (button_3_is_pressed()) {
-						step_multiplier = user_add_witout_overflow(step_multiplier, -100);
+						step_numerator = user_add_witout_overflow(step_numerator, -100);
 					}
 					break;
 				case 7:
 					if (button_2_is_pressed()) {
-						step_multiplier = user_add_witout_overflow(step_multiplier, 10);
+						step_numerator = user_add_witout_overflow(step_numerator, 10);
 					} else if (button_3_is_pressed()) {
-						step_multiplier = user_add_witout_overflow(step_multiplier, -10);
+						step_numerator = user_add_witout_overflow(step_numerator, -10);
 					}
 					break;
 				case 8:
 					if (button_2_is_pressed()) {
-						step_multiplier = user_add_witout_overflow(step_multiplier, 1);
+						step_numerator = user_add_witout_overflow(step_numerator, 1);
 					} else if (button_3_is_pressed()) {
-						step_multiplier = user_add_witout_overflow(step_multiplier, -1);
+						step_numerator = user_add_witout_overflow(step_numerator, -1);
 					}
 						break;
 				case 10:
 					if (button_2_is_pressed()) {
-						step_divisor = user_add_witout_overflow(step_divisor, 100);
+						step_denominator = user_add_witout_overflow(step_denominator, 100);
 					} else if (button_3_is_pressed()) {
-						step_divisor = user_add_witout_overflow(step_divisor, -100);
+						step_denominator = user_add_witout_overflow(step_denominator, -100);
 					}
 					break;
 				case 11:
 					if (button_2_is_pressed()) {
-						step_divisor = user_add_witout_overflow(step_divisor, 10);
+						step_denominator = user_add_witout_overflow(step_denominator, 10);
 					} else if (button_3_is_pressed()) {
-						step_divisor = user_add_witout_overflow(step_divisor, -10);
+						step_denominator = user_add_witout_overflow(step_denominator, -10);
 					}
 					break;
 				case 12:
 					if (button_2_is_pressed()) {
-						step_divisor = user_add_witout_overflow(step_divisor, 1);
+						step_denominator = user_add_witout_overflow(step_denominator, 1);
 					} else if (button_3_is_pressed()) {
-						step_divisor = user_add_witout_overflow(step_divisor, -1);
+						step_denominator = user_add_witout_overflow(step_denominator, -1);
 					}
 					break;
 				default:
@@ -126,8 +126,8 @@ void user_setup_values() {
 			}	
 		}
 		
-		if (step_divisor == 0) {
-			step_divisor = 1;	
+		if (step_denominator == 0) {
+			step_denominator = 1;	
 		}
 
 		while(button_status())
