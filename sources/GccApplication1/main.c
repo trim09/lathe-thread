@@ -62,7 +62,7 @@ static void spindle_try_to_set_position_limit() {
 	}
 }
 
-static uint8_t spindle_rotate_left() {
+static uint8_t is_spindle_rotating_left() {
 	uint8_t direction = PINB & (1 << PD2);
 	if (mode == LEFT) {
 		return direction;
@@ -71,17 +71,13 @@ static uint8_t spindle_rotate_left() {
 	}	
 }
 
-static void schedule_support_position_recalculation() {
-	TIMSK2 |= 1 << OCIE2A;
-}
-
 static void spindle_position_recalculation() {
-	if (spindle_rotate_left()) { // rotating left or right?
+	if (is_spindle_rotating_left()) { // rotating left or right?
 		spindle_revolution_steps_overflow++;
 		if (current_spindle_revolution_steps >= end_position + (STEPS_FOR_ONE_TURN - 1)) {
 			current_spindle_revolution_steps -= STEPS_FOR_ONE_TURN - 1;
 		} else {
-			current_spindle_revolution_steps++;	
+			current_spindle_revolution_steps++;
 			if (current_spindle_revolution_steps > STEPS_FOR_ONE_TURN && current_spindle_revolution_steps <= end_position) {
 				support_spindle_incremented_event();
 			}
@@ -97,9 +93,6 @@ static void spindle_position_recalculation() {
 			}
 		}
 	}
-	
-	//recalculate_support_position(current_spindle_revolution_steps);
-	schedule_support_position_recalculation();
 }
 	
 //Rotary Encoder interrupt
@@ -132,8 +125,15 @@ static void display_redraw() {
 	lcd_printf("%3u/%-3u%c%5i ot/min", get_configured_numerator(), get_configured_denominator(), mode_char, get_revolutions_per_minute());
 	lcd_set_cursor(0, 2);
 	lcd_printf("support: %11lu", get_actual_support_position());
+	//lcd_printf("support: %11lu", get_required_support_position());
 	lcd_set_cursor(0, 3);
 	lcd_printf("%2u %5i %11lu", button_status(), (int16_t) (get_required_support_position() - get_actual_support_position()), get_required_support_position());
+	/*
+	if (TIFR1 & (1 << TOV1))
+		lcd_printf("%2u %7i overflow", button_status(), (int16_t) (get_required_support_position() - get_actual_support_position()));
+	else 
+		lcd_printf("%2u %7i %9u", button_status(), (int16_t) (get_required_support_position() - get_actual_support_position()), TCNT1
+	*/
 }
 
 static void display_init_information() {
@@ -157,9 +157,8 @@ int main(void) {
 	lcd_init();
 	support_init();
 	
-	//user_setup_values();
+	user_setup_values();
 	support_set_fraction(get_configured_numerator(), get_configured_denominator());
-	//support_set_fraction(30, 20);
 	mode = get_configured_mode();
 	
 	display_init_information();
@@ -170,6 +169,24 @@ int main(void) {
 
 
 	//PORTC &= ~(1 << PORTC2); // disable Driver!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	/*
+	support_set_fraction(10, 3);
+	mode = RIGHT;
+	TIFR1 = 0xFF;
+	TCCR1B = (1 << CS12) | (1 << CS10);
+	//13540   pro 30600->100000   10/3
+	//20906   pro 30600,-15000->100000->50000   10/3
+	//17981   pro 30600,-15000->100000->50000   10/3 ruske deleni-
+	//12396   pro 30600,-15000->100000->50000   10/3 ruske deleni-+
+	for(uint16_t i = 0; i<30600; i++) {
+		spindle_position_recalculation();
+	}
+	mode = LEFT;
+	for(uint16_t i = 0; i<15000; i++) {
+		spindle_position_recalculation();
+	}
+	TCCR1B = 0;
+	*/
 
     while (1) {
 		spindle_try_to_set_position_limit();

@@ -2,9 +2,8 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <util/atomic.h>
-#include "main.h"
-#include "rdivfun.h"
 #include <stdlib.h>
+#include "rdivfun.h"
 
 /******* support position recalculation *********/
 //static volatile float step_multiplier_float = 1.;
@@ -33,26 +32,39 @@ uint32_t get_required_support_position() {
 	return required_support_position;
 }
 
+static void support_schedule_step() {
+	TIMSK2 |= 1 << OCIE2A;
+}
+
 void support_spindle_incremented_event() {
 	spindle_to_support_recalculation += step_numerator;
 	
-	//uint16_t div_result = 0;
-	//rdiv16u(&div_result, &spindle_to_support_recalculation, spindle_to_support_recalculation, step_denominator);
-	div_t result = div(spindle_to_support_recalculation, step_denominator);
+	if (spindle_to_support_recalculation <= 0) {
+		return;
+	}
 	
-	spindle_to_support_recalculation = result.rem;
-	required_support_position += result.quot;
+	uint16_t quot = 0;	
+	rdiv16u(&quot, (uint16_t*)&spindle_to_support_recalculation, spindle_to_support_recalculation, (uint16_t)step_denominator);
+	required_support_position += (uint8_t)quot;
+	
+	support_schedule_step();
 }
 
-void support_spindle_decremented_event() {/*
+void support_spindle_decremented_event() {
 	spindle_to_support_recalculation -= step_numerator;
 	
-	int16_t result = 0;
-	int16_t remainder = 0;
-	rdiv16u(&result, &remainder, spindle_to_support_recalculation, step_denominator);
-	spindle_to_support_recalculation = remainder;
+	if (spindle_to_support_recalculation >= 0) {
+		return;
+	}
 	
-	required_support_position += result;*/
+	uint16_t quot = 0;
+	uint16_t rem = 0;
+	rdiv16u(&quot, &rem, (uint16_t)-spindle_to_support_recalculation, (uint16_t)step_denominator);
+		
+	spindle_to_support_recalculation = -(int16_t)rem;
+	required_support_position -= (uint8_t)quot;
+	
+	support_schedule_step();
 }
 
 /*********** stepper-motor ***************/
@@ -88,7 +100,7 @@ static void stepper_motor_move_towards(uint32_t required_support_position) {
 	}
 
 	if (required_support_position != actual_support_position) {
-		TIMSK2 |= 1 << OCIE2A;
+		support_schedule_step();
 	}
 }
 
