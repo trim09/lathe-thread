@@ -5,8 +5,8 @@
 #include "buttons.h"
 #include "lcd.h"
 
-static uint8_t step_numerator = 1u;
-static uint8_t step_denominator = 1u;
+static uint8_t step_numerator = 128u;
+static uint8_t step_denominator = 128u;
 static mode_t mode = LEFT;
 
 float get_configured_fraction() {

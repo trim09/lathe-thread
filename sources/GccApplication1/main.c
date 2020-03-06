@@ -34,12 +34,14 @@
 #include "support.h"
 
 static /*volatile*/ mode_t mode = LEFT;
+static /*volatile*/ mode_t new_mode = LEFT;
 
 /******* Angle and position ******/
-#define END_POSITION_INIT_VALUE (UINT32_MAX - STEPS_FOR_ONE_TURN) 
-static /*volatile*/ uint32_t end_position = END_POSITION_INIT_VALUE;
+static /*volatile*/ uint16_t end_position = UINT16_MAX;
 
-static /*volatile*/ uint32_t current_spindle_revolution_steps;
+//static /*volatile*/ uint32_t current_spindle_revolution_steps;
+static /*volatile*/ uint16_t current_spindle_revolutions;
+static /*volatile*/ uint16_t current_spindle_angle;
 static /*volatile*/ uint16_t spindle_revolution_steps_overflow; //can overflow
 
 uint32_t get_end_position() {
@@ -50,15 +52,22 @@ uint16_t get_spindle_revolution_steps_overflow() {
 	return spindle_revolution_steps_overflow;
 }
 
-//uint32_t get_current_spindle_revolution_steps() {
-//	return current_spindle_revolution_steps;
-//}
-
 static void spindle_try_to_set_position_limit() {
-	if (button_1_is_pressed() && (end_position == END_POSITION_INIT_VALUE)) {
+	if (button_1_is_pressed() && (end_position == UINT16_MAX)) {
 		ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-			end_position = current_spindle_revolution_steps;
+			end_position = current_spindle_revolutions + 1;
 		}
+	}
+}
+
+static void spindle_try_to_set_direction() {
+	if (button_5_is_pressed()) {
+		if (new_mode == LEFT) {
+			new_mode = RIGHT;
+		} else {
+			new_mode = LEFT;
+		}
+		_delay_ms(500);
 	}
 }
 
@@ -72,25 +81,37 @@ static uint8_t is_spindle_rotating_left() {
 }
 
 static void spindle_position_recalculation() {
+	if (current_spindle_angle == 0) {
+		mode = new_mode;
+	}
 	if (is_spindle_rotating_left()) { // rotating left or right?
 		spindle_revolution_steps_overflow++;
-		if (current_spindle_revolution_steps >= end_position + (STEPS_FOR_ONE_TURN - 1)) {
-			current_spindle_revolution_steps -= STEPS_FOR_ONE_TURN - 1;
-		} else {
-			current_spindle_revolution_steps++;
-			if (current_spindle_revolution_steps > STEPS_FOR_ONE_TURN && current_spindle_revolution_steps <= end_position) {
-				support_spindle_incremented_event();
+		current_spindle_angle++;
+
+		if (current_spindle_angle == STEPS_FOR_ONE_TURN) {
+			current_spindle_angle = 0;
+			if (current_spindle_revolutions != end_position) {
+				current_spindle_revolutions++;
 			}
+		}
+		
+		if ((current_spindle_revolutions > 0) && (current_spindle_revolutions < end_position) 
+			&& !((current_spindle_revolutions == 1) && (current_spindle_angle == 0))) {
+			support_spindle_incremented_event();
 		}
 	} else {
 		spindle_revolution_steps_overflow--;
-		if (current_spindle_revolution_steps == 0)  {
-			current_spindle_revolution_steps = STEPS_FOR_ONE_TURN - 1;
-		} else {
-			current_spindle_revolution_steps--;
-			if (current_spindle_revolution_steps >= STEPS_FOR_ONE_TURN && current_spindle_revolution_steps < end_position) {
-				support_spindle_decremented_event();
+		current_spindle_angle--;
+		if (current_spindle_angle == UINT16_MAX) { // if overflow
+			current_spindle_angle = STEPS_FOR_ONE_TURN - 1;
+			if (current_spindle_revolutions != 0) {
+				current_spindle_revolutions--;
 			}
+		}
+				
+		if ((current_spindle_revolutions > 0) && (current_spindle_revolutions < end_position)
+			&& !((current_spindle_revolutions == (end_position - 1)) && (current_spindle_angle == (STEPS_FOR_ONE_TURN - 1)))) {
+			support_spindle_decremented_event();
 		}
 	}
 }
@@ -119,15 +140,25 @@ static void display_redraw() {
 	} else {
 		mode_char = '?';
 	}
+	
+	char limit;
+	if (current_spindle_revolutions == end_position) {
+		limit = '>';
+	} else if (current_spindle_revolutions == 0) {
+		limit = '<';
+	} else {
+		limit = ' ';
+	}
+	
 	lcd_set_cursor(0, 0);
-	lcd_printf("vreteno: %4u  %5u", (uint16_t)(current_spindle_revolution_steps % STEPS_FOR_ONE_TURN), (uint16_t)(current_spindle_revolution_steps / STEPS_FOR_ONE_TURN));
+	lcd_printf("vreteno: %4u  %5u", current_spindle_angle, current_spindle_revolutions);
 	lcd_set_cursor(0, 1);
 	lcd_printf("%3u/%-3u%c%5i ot/min", get_configured_numerator(), get_configured_denominator(), mode_char, get_revolutions_per_minute());
 	lcd_set_cursor(0, 2);
 	lcd_printf("support: %11lu", get_actual_support_position());
 	//lcd_printf("support: %11lu", get_required_support_position());
 	lcd_set_cursor(0, 3);
-	lcd_printf("%2u %5i %11lu", button_status(), (int16_t) (get_required_support_position() - get_actual_support_position()), get_required_support_position());
+	lcd_printf("%2u%c%5i %11lu", button_status(), limit, (int16_t) (get_required_support_position() - get_actual_support_position()), get_required_support_position());
 	/*
 	if (TIFR1 & (1 << TOV1))
 		lcd_printf("%2u %7i overflow", button_status(), (int16_t) (get_required_support_position() - get_actual_support_position()));
@@ -187,9 +218,10 @@ int main(void) {
 	}
 	TCCR1B = 0;
 	*/
-
-    while (1) {
+	
+    while (1)  {
 		spindle_try_to_set_position_limit();
+		spindle_try_to_set_direction();
 		display_redraw();
     }
 	
